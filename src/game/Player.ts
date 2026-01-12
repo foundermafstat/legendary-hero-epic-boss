@@ -1,5 +1,5 @@
 import { Container } from 'pixi.js';
-import { Vec2, vec2, normalize, add, mul } from './utils/math';
+import { Vec2, vec2, normalize, add, mul, sub } from './utils/math';
 import { GAME_CONFIG } from './config';
 import { FlashlightStats, FLASHLIGHT_TIERS, FlashlightTier } from './items/Flashlight';
 
@@ -93,5 +93,34 @@ export class Player {
 
     equipFlashlight(tier: FlashlightTier) {
         this.equippedFlashlight = FLASHLIGHT_TIERS[tier];
+    }
+
+    // Get world position for weapon muzzle (Right side offset)
+    getWeaponPosition(): Vec2 {
+        // Forward 25, Right 10
+        const forward = vec2(Math.cos(this.flashlightAngle), Math.sin(this.flashlightAngle));
+        const right = vec2(-Math.sin(this.flashlightAngle), Math.cos(this.flashlightAngle)); // Perpendicular
+
+        // Pos + Forward*25 + Right*10
+        const offset = add(mul(forward, 25), mul(right, 10));
+        return add(this.position, offset);
+    }
+
+    // Get local position for muzzle flash (relative to container)
+    getWeaponLocalPosition(): Vec2 {
+        const forward = vec2(Math.cos(this.flashlightAngle), Math.sin(this.flashlightAngle));
+        const right = vec2(-Math.sin(this.flashlightAngle), Math.cos(this.flashlightAngle));
+        return add(mul(forward, 25), mul(right, 10));
+    }
+
+    // Get world position for flashlight beam origin (Left side offset)
+    getFlashlightPosition(): Vec2 {
+        // Forward 25, Left 10
+        const forward = vec2(Math.cos(this.flashlightAngle), Math.sin(this.flashlightAngle));
+        const right = vec2(-Math.sin(this.flashlightAngle), Math.cos(this.flashlightAngle));
+
+        // Pos + Forward*25 - Right*10
+        const offset = sub(mul(forward, 25), mul(right, 10));
+        return add(this.position, offset);
     }
 }

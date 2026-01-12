@@ -38,6 +38,9 @@ export class FXManager {
     private shellTexture: Texture;
     private bloodTexture: Texture;
 
+    // Shockwaves visual list
+    private shockwaves: { graphic: Graphics, time: number }[] = [];
+
     constructor(app: Application) {
         this.app = app;
         this.container = new Container();
@@ -50,17 +53,15 @@ export class FXManager {
 
     private generateBulletTexture(): Texture {
         const g = new Graphics();
-        g.rect(0, 0, 4, 8); // 1x2 pixel ratio (scaled up slightly for visibility? User said 1x2 "pixels". 
-        // If literally 1x2 pixels, it's tiny. Let's assume 2x4 for visibility or scale down Sprite.
-        // User said "smaller than before, 1x2". Before was radius 3 (6px wide).
-        // Let's do 2px wide, 4px long.
+        // Rectangular 8x2 pixels (Horizontal) aligned with rotation 0
+        g.rect(-4, -1, 8, 2);
         g.fill({ color: 0xFFFF00 });
         return this.app.renderer.generateTexture(g);
     }
 
     private generateShellTexture(): Texture {
         const g = new Graphics();
-        g.rect(0, 0, 2, 4); // User said 1x2 pixels. Let's try 2x4 for visibility.
+        g.rect(0, 0, 2, 4);
         g.fill({ color: 0xD4AF37 });
         return this.app.renderer.generateTexture(g);
     }
@@ -73,7 +74,6 @@ export class FXManager {
     }
 
     createBloodSplatter(x: number, y: number) {
-        // Random splatter pattern using pre-generated texture
         for (let i = 0; i < 3; i++) {
             const s = new Sprite(this.bloodTexture);
             s.anchor.set(0.5);
@@ -82,28 +82,27 @@ export class FXManager {
             const scale = 0.5 + Math.random() * 1.0;
             s.scale.set(scale);
             s.rotation = Math.random() * Math.PI * 2;
-
-            // Add at beginning so it's under shells/bullets
             this.container.addChildAt(s, 0);
-
-            // Should properly manage blood sprites too for cleanup? 
-            // For now, let's keep them persistent as requested but maybe limit max count if optimizing?
-            // User asked for corpses to fade, implied blood fades too? "like blood spots".
-            // Let's add simple fade logic to blood? The user said "fallen body... disappears LIKE blood spots".
-            // So blood spots SHOULD disappear.
-
-            // Hack: Attach fade tween to sprite or manage in list. 
-            // Let's assume blood stays for a long time.
         }
     }
 
+    createShockwave(x: number, y: number) {
+        const wave = new Graphics();
+        wave.circle(0, 0, 100);
+        wave.stroke({ color: 0xFFFFFF, width: 4 });
+        wave.x = x;
+        wave.y = y;
+
+        this.container.addChild(wave);
+        this.shockwaves.push({ graphic: wave, time: 0 });
+    }
+
     spawnCorpse(mobContainer: Container, x: number, y: number) {
-        // Snapshot the mob visual
         const texture = this.app.renderer.generateTexture(mobContainer);
         const corpse = new Corpse(texture, x, y, Math.random() * Math.PI * 2);
 
         this.corpses.push(corpse);
-        this.container.addChildAt(corpse.sprite, 0); // Bottom layer
+        this.container.addChildAt(corpse.sprite, 0);
     }
 
     spawnBullet(x: number, y: number, angle: number): Bullet {
@@ -119,7 +118,7 @@ export class FXManager {
         this.container.addChild(shell.container);
     }
 
-    createMuzzleFlash(x: number, y: number, angle: number) {
+    createMuzzleFlash(x: number, y: number, angle: number, parent: Container | null = null) {
         const flash = new Graphics();
         flash.poly([0, 0, 20, -5, 30, 0, 20, 5]);
         flash.fill({ color: 0xFFFFCC, alpha: 0.8 });
@@ -127,9 +126,12 @@ export class FXManager {
         flash.x = x;
         flash.y = y;
 
-        this.container.addChild(flash);
+        if (parent) {
+            parent.addChild(flash);
+        } else {
+            this.container.addChild(flash);
+        }
 
-        // Remove after 50ms (1-2 frames)
         setTimeout(() => {
             if (!flash.destroyed) {
                 flash.destroy();
@@ -168,6 +170,20 @@ export class FXManager {
             }
         }
 
-        // TODO: Blood fading update loop if needed
+        // Update shockwaves
+        for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+            const wave = this.shockwaves[i];
+            wave.time += deltaMs;
+
+            const progress = wave.time / 500;
+            const scale = 1 + progress * 4;
+            wave.graphic.scale.set(scale);
+            wave.graphic.alpha = 1 - progress;
+
+            if (wave.time >= 500) {
+                wave.graphic.destroy();
+                this.shockwaves.splice(i, 1);
+            }
+        }
     }
 }

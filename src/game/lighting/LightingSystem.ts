@@ -48,7 +48,8 @@ export class LightingSystem {
         flashlightAngle: number,
         flashlightStats: FlashlightStats,
         walls: WallData[],
-        mobs: Circle[],
+        obstacles: Circle[],       // General obstacles (mobs)
+        playerObstacle: Circle | null, // Player obstacle (optional)
         lamps: Lamp[],
         screenWidth: number,
         screenHeight: number,
@@ -71,9 +72,9 @@ export class LightingSystem {
         ctx.globalCompositeOperation = 'destination-out';
 
         // 1. Player Ambient Light (Fog of War)
-        // A weak 360 light around player to see surroundings
         const ambientRange = 350;
-        const ambientPoints = castRays(playerPos, walls, mobs, ambientRange);
+        // Ambient light ignores player (player is source/center)
+        const ambientPoints = castRays(playerPos, walls, obstacles, ambientRange);
         if (ambientPoints.length > 2) {
             const screenX = playerPos.x + cameraX;
             const screenY = playerPos.y + cameraY;
@@ -94,18 +95,21 @@ export class LightingSystem {
         }
 
         // 2. Flashlight
+        // Flashlight ignores player (player is source)
         this.drawFlashlight(
             ctx,
             playerPos,
             flashlightAngle,
             flashlightStats,
             walls,
-            mobs,
+            obstacles,
             cameraX,
             cameraY
         );
 
         // 3. Lamps
+        // Lamps SHOULD be blocked by player
+        const lampObstacles = playerObstacle ? [...obstacles, playerObstacle] : obstacles;
         const viewRadius = Math.max(screenWidth, screenHeight) * 0.7;
 
         for (const lamp of lamps) {
@@ -114,7 +118,7 @@ export class LightingSystem {
 
             // View culling
             if (distToPlayer < viewRadius + lamp.range) {
-                const lampPoints = castRays(lampPos, walls, mobs, lamp.range);
+                const lampPoints = castRays(lampPos, walls, lampObstacles, lamp.range);
                 this.drawPointLight(ctx, lampPos, lampPoints, lamp.range, cameraX, cameraY);
             }
         }
@@ -140,7 +144,7 @@ export class LightingSystem {
         direction: number,
         stats: FlashlightStats,
         walls: WallData[],
-        mobs: Circle[],
+        obstacles: Circle[],
         cameraX: number,
         cameraY: number
     ): void {
@@ -166,7 +170,7 @@ export class LightingSystem {
             const points = castRays(
                 origin,
                 walls,
-                mobs,
+                obstacles,
                 range,
                 layerConeAngle,
                 direction
@@ -175,10 +179,6 @@ export class LightingSystem {
             if (points.length < 2) continue;
 
             const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, range);
-            // Use stats color? Canvas needs string.
-            // Actually this is destination-out (erasing fog), so color must be WHITE (alpha matters).
-            // Color tinting should happen in a separate pass if we want colored lights.
-            // For now, we are just cutting holes in the black fog.
 
             gradient.addColorStop(0, `rgba(255, 255, 255, ${layerAlpha})`);
             gradient.addColorStop(0.5, `rgba(255, 255, 255, ${layerAlpha * 0.5})`);

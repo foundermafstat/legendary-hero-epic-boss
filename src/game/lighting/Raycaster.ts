@@ -8,12 +8,43 @@ import {
     getRectSegments,
     Segment,
     raySegmentIntersection,
+    normalize,
 } from '../utils/math';
 import { WallData } from '../Wall';
 
 interface Circle {
     position: Vec2;
     radius: number;
+}
+
+// Check if there is a direct line of sight between two points blocked by walls
+export function hasLineOfSight(
+    start: Vec2,
+    end: Vec2,
+    walls: WallData[]
+): boolean {
+    const dir = sub(end, start);
+    const dist = length(dir);
+    if (dist < 1) return true;
+
+    const rayDir = normalize(dir);
+
+    // Check against ALL walls (optimization: check bbox first?)
+    // For now simple loop
+    for (const wall of walls) {
+        // Optimization: Skip if wall is not in bounding box of ray?
+        // Let's rely on fast segment check.
+        const segments = getRectSegments(wall.x, wall.y, wall.width, wall.height);
+        for (const seg of segments) {
+            const intersection = raySegmentIntersection(start, rayDir, seg.p1, seg.p2);
+            // If intersection exists and is less than distance to target
+            if (intersection !== null && intersection > 0.1 && intersection < dist) {
+                return false; // Blocked
+            }
+        }
+    }
+
+    return true;
 }
 
 // Optimized raycasting - cast rays and return visibility polygon
