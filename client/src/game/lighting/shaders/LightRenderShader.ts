@@ -34,6 +34,7 @@ export const lightRenderFragment = `
   uniform float uResolution;
   uniform vec3 uLightColor;
   uniform float uSoftness;
+  uniform float uConeAngle; // Half-angle in radians
 
   #define PI 3.14159265359
 
@@ -56,7 +57,46 @@ export const lightRenderFragment = `
       return;
     }
     
+    // Cone attenuation
+    // We assume the light points to the Right (0 radians) in local space
+    // and we rotate the mesh to change direction.
+    // Wrap theta to maintain continuity if needed, but atan is -PI to PI
+    
+    // Smooth fade at the edges of the cone
+    if (abs(theta) > uConeAngle) {
+       fragColor = vec4(0.0);
+       return;
+    }
+
+    // Optional: Soft cone edges (could be improved with smoothstep)
+    // float coneFade = smoothstep(uConeAngle, uConeAngle * 0.8, abs(theta));
+    
     // Convert angle to texture coordinate (0 to 1)
+    // Shadow map is generated 0 to 1 mapping to 0 to 360 (or similar)
+    // ShadowMapShader uses: theta = PI * 1.5 + norm.x * PI; which maps -1..1 to 0.5PI..2.5PI
+    // We need to match that parameterization.
+    
+    // In ShadowMapShader:
+    // y goes 0 to 1 (distance).
+    // x goes 0 to 1 (angle).
+    
+    // Here we have `theta` (angle) and `r` (distance).
+    // We need to find `coord` (x in shadow map) corresponding to `theta`.
+    
+    // Current ShadowMapShader mapping:
+    // Input x (-1 to 1) -> Angle (PI*1.5 + x*PI) = 1.5PI + [-PI, PI] = [0.5PI, 2.5PI]
+    // Normalized Angle (0 to 1) in shadow map corresponds to 0.5PI to 2.5PI ?
+    // Use the inverse:
+    // Angle A = 1.5PI + (coord * 2 - 1) * PI
+    // We have theta (-PI to PI).
+    // We need to map theta to coord (0..1).
+    
+    // Aligning coordinate systems is tricky without visualizing.
+    // Let's assume consistent "Right = 0".
+    // If ShadowMapShader scans "All Directions", it surely covers our Theta.
+    // Let's use the simplest mapping: 
+    // coord = (theta + PI) / (2.0 * PI); // Maps -PI..PI to 0..1
+    
     float coord = (theta + PI) / (2.0 * PI);
     
     // Sample center (hard shadows)
@@ -81,8 +121,11 @@ export const lightRenderFragment = `
     float falloff = smoothstep(1.0, 0.0, r);
     falloff = pow(falloff, 1.5); // Adjust curve
     
+    // Apply Cone Edge Softness
+    float coneEdge = smoothstep(uConeAngle, uConeAngle * 0.8, abs(theta));
+    
     // Final color with light color tint
-    float intensity = sum * falloff;
+    float intensity = sum * falloff * coneEdge;
     fragColor = vec4(uLightColor * intensity, intensity);
   }
 `;

@@ -45,6 +45,8 @@ export class Joystick extends Container {
     // Or just use 'global' events on the interaction manager.
     // For simplicity, let's use the object events and assume standard Pixi behavior (capture).
 
+    private dragTarget: any = null;
+
     private onPointerDown(e: FederatedPointerEvent) {
         if (this.isDragging) return;
         this.isDragging = true;
@@ -52,16 +54,13 @@ export class Joystick extends Container {
         this.startPos = vec2(e.global.x, e.global.y);
         this.knob.alpha = 1.0;
 
-        const stage = this.parent.parent; // Assuming Game -> HUD -> Joystick?
-        // Better: Listen on main app stage if possible. 
-        // For now, let's listen on 'window' for moves to be robust, 
-        // but we need to convert to local space.
+        const stage = this.parent.parent;
 
         // Pixi way:
-        const target = e.target;
-        target.on('pointermove', this.onPointerMove, this);
-        target.on('pointerup', this.onPointerUp, this);
-        target.on('pointerupoutside', this.onPointerUp, this);
+        this.dragTarget = e.target;
+        this.dragTarget.on('pointermove', this.onPointerMove, this);
+        this.dragTarget.on('pointerup', this.onPointerUp, this);
+        this.dragTarget.on('pointerupoutside', this.onPointerUp, this);
 
         // Initial move calculation
         this.updateKnob(e.global.x, e.global.y);
@@ -80,10 +79,12 @@ export class Joystick extends Container {
         this.knob.position.set(0, 0);
         this.knob.alpha = 0.8;
 
-        const target = e.target;
-        target.off('pointermove', this.onPointerMove, this);
-        target.off('pointerup', this.onPointerUp, this);
-        target.off('pointerupoutside', this.onPointerUp, this);
+        if (this.dragTarget) {
+            this.dragTarget.off('pointermove', this.onPointerMove, this);
+            this.dragTarget.off('pointerup', this.onPointerUp, this);
+            this.dragTarget.off('pointerupoutside', this.onPointerUp, this);
+            this.dragTarget = null;
+        }
     }
 
     private updateKnob(globalX: number, globalY: number) {

@@ -132,6 +132,22 @@ export class SoundManager {
         osc.start();
         osc.stop(ctx.currentTime + 0.7);
     }
+    playSound(sound: string, options?: { volume?: number, rate?: number }) {
+        switch (sound) {
+            case 'shoot':
+                this.playGunshot();
+                break;
+            case 'step':
+                this.playFootstep();
+                break;
+            case 'hit':
+                this.playMobHit();
+                break;
+            case 'die':
+                this.playGrowl(options?.volume); // Reuse growl for death for now
+                break;
+        }
+    }
 }
 
 // Singleton

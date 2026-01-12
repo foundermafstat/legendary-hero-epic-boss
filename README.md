@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hero vs Boss - Multiplayer Game
 
-## Getting Started
+## Project Structure
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+herovsboss/
+├── client/          # Next.js frontend
+│   └── src/
+│       ├── components/
+│       │   ├── Game.tsx            # Original single-player
+│       │   └── GameMultiplayer.tsx # New multiplayer version
+│       └── network/                # Network layer
+│           ├── NetworkManager.ts
+│           ├── types.ts
+│           └── config.ts
+├── server/          # Node.js backend
+│   └── src/
+│       ├── index.ts               # Express + Socket.IO entry
+│       ├── game/
+│       │   └── GameManager.ts     # Authoritative game loop
+│       ├── entities/              # Server-side entities
+│       ├── world/
+│       │   └── ServerWorld.ts
+│       └── shared/                # Shared types/config
+└── package.json     # Workspace configuration
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup Instructions
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 1. Install Dependencies
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# In root directory
+npm install
 
-## Learn More
+# Install Socket.IO client (in client folder)
+cd client
+npm install socket.io-client
 
-To learn more about Next.js, take a look at the following resources:
+# Install server dependencies (in server folder)
+cd ../server
+npm install
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 2. Run Development Servers
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# From root directory - runs both client and server
+npm run dev
 
-## Deploy on Vercel
+# Or run separately:
+npm run dev:client  # Client on http://localhost:3000
+npm run dev:server  # Server on http://localhost:3001
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 3. Use Multiplayer Mode
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Replace the import in your page to use the multiplayer version:
+
+```tsx
+// Before:
+import Game from '@/components/Game';
+
+// After:
+import Game from '@/components/GameMultiplayer';
+```
+
+## Architecture
+
+### Server (Authoritative)
+- Runs at 60 TPS (ticks per second)
+- Handles all game logic, physics, and collision detection
+- Manages player connections via Socket.IO
+- Broadcasts game state to all clients
+
+### Client (Rendering Only)
+- Receives game state from server
+- Renders entities at their server-determined positions
+- Sends player inputs (movement, aim, shooting)
+- Handles local rendering and effects
+
+## Key Features
+
+✅ Authoritative server prevents cheating
+✅ Real-time multiplayer with Socket.IO
+✅ Smooth 60 TPS server tick rate
+✅ Client-side prediction ready (optional)
+✅ Automatic player connection/disconnection handling
+✅ Shared type system for type safety
+
+## Next Steps
+
+- [ ] Add client-side prediction for smoother movement
+- [ ] Implement lag compensation
+- [ ] Add player names and scoreboard
+- [ ] Add chat system
+- [ ] Deploy to production

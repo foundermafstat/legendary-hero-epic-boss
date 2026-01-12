@@ -45,11 +45,10 @@ export class LightingSystem {
 
     public update(
         playerPos: Vec2,
-        flashlightAngle: number,
-        flashlightStats: FlashlightStats,
+        flashlights: { position: Vec2, angle: number, stats: FlashlightStats, ownerId: string }[],
         walls: WallData[],
         obstacles: Circle[],       // General obstacles (mobs)
-        playerObstacle: Circle | null, // Player obstacle (optional)
+        allPlayers: { id: string, position: Vec2, radius: number }[], // All players for shadow casting
         lamps: Lamp[],
         screenWidth: number,
         screenHeight: number,
@@ -94,22 +93,34 @@ export class LightingSystem {
             ctx.fill();
         }
 
-        // 2. Flashlight
-        // Flashlight ignores player (player is source)
-        this.drawFlashlight(
-            ctx,
-            playerPos,
-            flashlightAngle,
-            flashlightStats,
-            walls,
-            obstacles,
-            cameraX,
-            cameraY
-        );
+        // 2. Flashlights
+        for (const flash of flashlights) {
+            // Obstacles for this flashlight: Mobs + All OTHER players
+            const currentObstacles = [
+                ...obstacles,
+                ...allPlayers
+                    .filter(p => p.id !== flash.ownerId)
+                    .map(p => ({ position: p.position, radius: p.radius }))
+            ];
+
+            this.drawFlashlight(
+                ctx,
+                flash.position,
+                flash.angle,
+                flash.stats,
+                walls,
+                currentObstacles,
+                cameraX,
+                cameraY
+            );
+        }
 
         // 3. Lamps
-        // Lamps SHOULD be blocked by player
-        const lampObstacles = playerObstacle ? [...obstacles, playerObstacle] : obstacles;
+        // Lamps SHOULD be blocked by ALL players
+        const lampObstacles = [
+            ...obstacles,
+            ...allPlayers.map(p => ({ position: p.position, radius: p.radius }))
+        ];
         const viewRadius = Math.max(screenWidth, screenHeight) * 0.7;
 
         for (const lamp of lamps) {
