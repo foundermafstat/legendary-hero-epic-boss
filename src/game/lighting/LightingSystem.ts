@@ -10,6 +10,7 @@ import { WallData } from '../Wall';
 import { GAME_CONFIG } from '../config';
 import { Lamp } from '../World';
 import { castRays } from './Raycaster';
+import { FlashlightStats } from '../items/Flashlight';
 
 interface Circle {
     position: Vec2;
@@ -45,6 +46,7 @@ export class LightingSystem {
     public update(
         playerPos: Vec2,
         flashlightAngle: number,
+        flashlightStats: FlashlightStats,
         walls: WallData[],
         mobs: Circle[],
         lamps: Lamp[],
@@ -68,24 +70,49 @@ export class LightingSystem {
         // Use destination-out to cut holes in the fog
         ctx.globalCompositeOperation = 'destination-out';
 
-        // Draw flashlight with soft edges
+        // 1. Player Ambient Light (Fog of War)
+        // A weak 360 light around player to see surroundings
+        const ambientRange = 350;
+        const ambientPoints = castRays(playerPos, walls, mobs, ambientRange);
+        if (ambientPoints.length > 2) {
+            const screenX = playerPos.x + cameraX;
+            const screenY = playerPos.y + cameraY;
+
+            const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, ambientRange);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)'); // Center visibility
+            gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.1)'); // Falloff
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY);
+            for (const point of ambientPoints) {
+                ctx.lineTo(point.x + cameraX, point.y + cameraY);
+            }
+            ctx.closePath();
+            ctx.fillStyle = gradient;
+            ctx.fill();
+        }
+
+        // 2. Flashlight
         this.drawFlashlight(
             ctx,
             playerPos,
             flashlightAngle,
+            flashlightStats,
             walls,
             mobs,
             cameraX,
             cameraY
         );
 
-        // Draw visible lamp lights
+        // 3. Lamps
         const viewRadius = Math.max(screenWidth, screenHeight) * 0.7;
 
         for (const lamp of lamps) {
             const lampPos = vec2(lamp.x, lamp.y);
             const distToPlayer = length(sub(lampPos, playerPos));
 
+            // View culling
             if (distToPlayer < viewRadius + lamp.range) {
                 const lampPoints = castRays(lampPos, walls, mobs, lamp.range);
                 this.drawPointLight(ctx, lampPos, lampPoints, lamp.range, cameraX, cameraY);
@@ -111,25 +138,29 @@ export class LightingSystem {
         ctx: CanvasRenderingContext2D,
         origin: Vec2,
         direction: number,
+        stats: FlashlightStats,
         walls: WallData[],
         mobs: Circle[],
         cameraX: number,
         cameraY: number
     ): void {
-        const range = GAME_CONFIG.FLASHLIGHT_RANGE;
-        const coneAngle = GAME_CONFIG.FLASHLIGHT_ANGLE;
+        const range = stats.range;
+        const coneAngle = stats.angle;
 
         const screenX = origin.x + cameraX;
         const screenY = origin.y + cameraY;
 
-        // Draw multiple layers with decreasing angles for soft edges
-        const layers = 5;
-        const edgeSoftness = coneAngle * 0.3; // 30% of cone angle is soft falloff
+        // OPTIMIZATION: Reduced layers from 5 to 3
+        const layers = 3;
+        const edgeSoftness = coneAngle * 0.2;
 
         for (let i = 0; i < layers; i++) {
             const t = i / (layers - 1); // 0 to 1
             const layerConeAngle = coneAngle + edgeSoftness * (1 - t);
-            const layerAlpha = 0.2 + 0.8 * t; // Outer layers are more transparent
+
+            // Adjust alpha based on stats.intensity
+            const baseAlpha = 0.3 * stats.intensity;
+            const layerAlpha = baseAlpha + (1 - baseAlpha) * t;
 
             // Cast rays for this layer
             const points = castRays(
@@ -143,16 +174,16 @@ export class LightingSystem {
 
             if (points.length < 2) continue;
 
-            // Create radial gradient
             const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, range);
+            // Use stats color? Canvas needs string.
+            // Actually this is destination-out (erasing fog), so color must be WHITE (alpha matters).
+            // Color tinting should happen in a separate pass if we want colored lights.
+            // For now, we are just cutting holes in the black fog.
+
             gradient.addColorStop(0, `rgba(255, 255, 255, ${layerAlpha})`);
-            gradient.addColorStop(0.15, `rgba(255, 255, 255, ${layerAlpha * 0.9})`);
-            gradient.addColorStop(0.35, `rgba(255, 255, 255, ${layerAlpha * 0.65})`);
-            gradient.addColorStop(0.55, `rgba(255, 255, 255, ${layerAlpha * 0.35})`);
-            gradient.addColorStop(0.75, `rgba(255, 255, 255, ${layerAlpha * 0.12})`);
+            gradient.addColorStop(0.5, `rgba(255, 255, 255, ${layerAlpha * 0.5})`);
             gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
-            // Draw visibility polygon
             ctx.beginPath();
             ctx.moveTo(screenX, screenY);
             for (const point of points) {
@@ -178,17 +209,10 @@ export class LightingSystem {
         const screenX = origin.x + cameraX;
         const screenY = origin.y + cameraY;
 
-        // Create radial gradient
         const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, range);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-        gradient.addColorStop(0.15, 'rgba(255, 255, 255, 0.9)');
-        gradient.addColorStop(0.35, 'rgba(255, 255, 255, 0.65)');
-        gradient.addColorStop(0.55, 'rgba(255, 255, 255, 0.35)');
-        gradient.addColorStop(0.75, 'rgba(255, 255, 255, 0.12)');
-        gradient.addColorStop(0.9, 'rgba(255, 255, 255, 0.03)');
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
         gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
-        // Draw visibility polygon with gradient
         ctx.beginPath();
         ctx.moveTo(screenX, screenY);
         for (const point of points) {

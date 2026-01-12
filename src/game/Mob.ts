@@ -1,14 +1,17 @@
 import { Container, Graphics } from 'pixi.js';
-import { Vec2, vec2, normalize, mul, add, random, angleBetween } from './utils/math';
+import { Vec2, vec2, normalize, mul, add, random } from './utils/math';
 import { GAME_CONFIG } from './config';
 
 export class Mob {
     public container: Container;
-    public graphics: Graphics;
     public position: Vec2;
     public velocity: Vec2;
     public radius: number;
+    public hp: number = 5;
+    public alive: boolean = true;
 
+    private bodyGraphics: Graphics;
+    private shadowGraphics: Graphics;
     private directionTimer: number = 0;
     private targetDirection: Vec2;
     private moveAngle: number = 0;
@@ -21,76 +24,84 @@ export class Mob {
         this.moveAngle = Math.atan2(this.targetDirection.y, this.targetDirection.x);
 
         this.container = new Container();
-        this.graphics = new Graphics();
 
-        this.draw();
-        this.container.addChild(this.graphics);
+        // Create shadow - offset down and right for 3D effect
+        this.shadowGraphics = new Graphics();
+        this.shadowGraphics.ellipse(0, 0, this.radius * 0.85, this.radius * 0.4);
+        this.shadowGraphics.fill({ color: 0x000000, alpha: 0.35 });
+        this.shadowGraphics.y = this.radius * 0.6; // Position BELOW body center
+
+        // Create body
+        this.bodyGraphics = new Graphics();
+        this.drawBody();
+
+        // Add in correct order: shadow FIRST, then body ON TOP
+        this.container.addChild(this.shadowGraphics);
+        this.container.addChild(this.bodyGraphics);
+
         this.updatePosition();
     }
 
-    private draw(): void {
-        this.graphics.clear();
-
-        // Shadow under mob
-        this.graphics.ellipse(2, 4, this.radius * 0.9, this.radius * 0.5);
-        this.graphics.fill({ color: 0x000000, alpha: 0.3 });
+    private drawBody(): void {
+        const g = this.bodyGraphics;
+        g.clear();
 
         // Body - main circle
-        this.graphics.circle(0, 0, this.radius);
-        this.graphics.fill({ color: GAME_CONFIG.MOB_COLOR });
+        g.circle(0, 0, this.radius);
+        g.fill({ color: GAME_CONFIG.MOB_COLOR });
 
         // Body outline
-        this.graphics.circle(0, 0, this.radius);
-        this.graphics.stroke({ color: 0x8b0000, width: 2 });
+        g.circle(0, 0, this.radius);
+        g.stroke({ color: 0x8b0000, width: 2 });
 
         // Inner body highlight
-        this.graphics.circle(-4, -4, this.radius * 0.6);
-        this.graphics.fill({ color: 0xff6666, alpha: 0.3 });
+        g.circle(-4, -4, this.radius * 0.6);
+        g.fill({ color: 0xff6666, alpha: 0.3 });
 
         // Angry eyebrows
-        this.graphics.moveTo(-10, -10);
-        this.graphics.lineTo(-3, -7);
-        this.graphics.stroke({ color: 0x000000, width: 2 });
+        g.moveTo(-10, -10);
+        g.lineTo(-3, -7);
+        g.stroke({ color: 0x000000, width: 2 });
 
-        this.graphics.moveTo(10, -10);
-        this.graphics.lineTo(3, -7);
-        this.graphics.stroke({ color: 0x000000, width: 2 });
+        g.moveTo(10, -10);
+        g.lineTo(3, -7);
+        g.stroke({ color: 0x000000, width: 2 });
 
         // Eye whites
-        this.graphics.circle(-6, -3, 5);
-        this.graphics.circle(6, -3, 5);
-        this.graphics.fill({ color: 0xffffff });
+        g.circle(-6, -3, 5);
+        g.circle(6, -3, 5);
+        g.fill({ color: 0xffffff });
 
         // Eye outline
-        this.graphics.circle(-6, -3, 5);
-        this.graphics.circle(6, -3, 5);
-        this.graphics.stroke({ color: 0x333333, width: 1 });
+        g.circle(-6, -3, 5);
+        g.circle(6, -3, 5);
+        g.stroke({ color: 0x333333, width: 1 });
 
         // Pupils (red for evil look)
-        this.graphics.circle(-5, -2, 2.5);
-        this.graphics.circle(7, -2, 2.5);
-        this.graphics.fill({ color: 0x660000 });
+        g.circle(-5, -2, 2.5);
+        g.circle(7, -2, 2.5);
+        g.fill({ color: 0x660000 });
 
         // Pupil highlights
-        this.graphics.circle(-6, -3, 1);
-        this.graphics.circle(6, -3, 1);
-        this.graphics.fill({ color: 0xffffff });
+        g.circle(-6, -3, 1);
+        g.circle(6, -3, 1);
+        g.fill({ color: 0xffffff });
 
         // Mouth (angry frown)
-        this.graphics.moveTo(-6, 6);
-        this.graphics.quadraticCurveTo(0, 3, 6, 6);
-        this.graphics.stroke({ color: 0x000000, width: 2 });
+        g.moveTo(-6, 6);
+        g.quadraticCurveTo(0, 3, 6, 6);
+        g.stroke({ color: 0x000000, width: 2 });
 
         // Small fangs
-        this.graphics.moveTo(-4, 6);
-        this.graphics.lineTo(-3, 9);
-        this.graphics.lineTo(-2, 6);
-        this.graphics.fill({ color: 0xffffff });
+        g.moveTo(-4, 6);
+        g.lineTo(-3, 9);
+        g.lineTo(-2, 6);
+        g.fill({ color: 0xffffff });
 
-        this.graphics.moveTo(2, 6);
-        this.graphics.lineTo(3, 9);
-        this.graphics.lineTo(4, 6);
-        this.graphics.fill({ color: 0xffffff });
+        g.moveTo(2, 6);
+        g.lineTo(3, 9);
+        g.lineTo(4, 6);
+        g.fill({ color: 0xffffff });
     }
 
     private randomDirection(): Vec2 {
@@ -98,7 +109,26 @@ export class Mob {
         return vec2(Math.cos(angle), Math.sin(angle));
     }
 
+    // Returns world position for blood splatter (caller should add to world layer)
+    public takeDamage(): { died: boolean; bloodPos: Vec2 } {
+        this.hp--;
+
+        // Calculate blood position in world coordinates
+        const bloodPos = vec2(
+            this.position.x + (Math.random() - 0.5) * this.radius * 2,
+            this.position.y + (Math.random() - 0.5) * this.radius * 2
+        );
+
+        if (this.hp <= 0) {
+            this.alive = false;
+            return { died: true, bloodPos };
+        }
+        return { died: false, bloodPos };
+    }
+
     public update(deltaTime: number, deltaMs: number): void {
+        if (!this.alive) return;
+
         this.directionTimer += deltaMs;
 
         // Change direction periodically

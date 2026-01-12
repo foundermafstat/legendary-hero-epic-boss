@@ -1,21 +1,29 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import { World } from '@/game/World';
 import { Player } from '@/game/Player';
 import { Mob } from '@/game/Mob';
 import { LightingSystem } from '@/game/lighting/LightingSystem';
 import { GAME_CONFIG } from '@/game/config';
 import { circleRectCollision, circleCircleCollision } from '@/game/physics/Collision';
-import { add, vec2 } from '@/game/utils/math';
-import { Flashlight, Crosshair } from 'lucide-react';
+import { add, vec2, length, sub, mul } from '@/game/utils/math';
+import { Flashlight, Crosshair, Zap, RotateCw } from 'lucide-react';
+import { FXManager } from '@/game/fx/FXManager';
+import { FlashlightTier } from '@/game/items/Flashlight';
+import { FlashlightPickup } from '@/game/items/FlashlightPickup';
+import { soundManager } from '@/game/audio/SoundManager';
 
 export default function Game() {
     const containerRef = useRef<HTMLDivElement>(null);
     const appRef = useRef<Application | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [fps, setFps] = useState(0);
+    const [autoFire, setAutoFire] = useState(false);
+    // Move currentflashlight to a callback to avoid stale closure issues in the ticker?
+    // Actually, HUD is updated via state, loop uses references.
+    const [currentFlashlight, setCurrentFlashlight] = useState<string>('Rusty Flashlight');
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -23,7 +31,6 @@ export default function Game() {
         let mounted = true;
 
         const init = async () => {
-            // Create PixiJS application
             const app = new Application();
 
             await app.init({
@@ -42,118 +49,93 @@ export default function Game() {
             appRef.current = app;
             containerRef.current?.appendChild(app.canvas);
 
-            // Create world
             const world = new World();
-
-            // Create game container (camera) - this moves to follow player
+            // Pass app to FXManager for texture generation
+            const fxManager = new FXManager(app);
             const gameContainer = new Container();
 
-            // Layer 1: Floor and grid (bottom)
+            // Layer 1: Floor
             gameContainer.addChild(world.container);
 
-            // Layer 2: Create lighting system (renders fog with light cutouts)
+            // Layer 1.5: FX (Corpses, Blood, Shells) on floor
+            gameContainer.addChild(fxManager.container);
+
+            // Layer 2: Flashlight pickups
+            const pickupsContainer = new Container();
+            gameContainer.addChild(pickupsContainer);
+
+            // Spawn flashlight pickups
+            const flashlightPickups: FlashlightPickup[] = [];
+            const tiers = [FlashlightTier.UNCOMMON, FlashlightTier.RARE, FlashlightTier.EPIC, FlashlightTier.LEGENDARY];
+            for (let i = 0; i < 8; i++) {
+                const pos = world.getRandomSpawnPosition();
+                const tier = tiers[Math.floor(Math.random() * tiers.length)];
+                const pickup = new FlashlightPickup(pos.x, pos.y, tier);
+                flashlightPickups.push(pickup);
+                pickupsContainer.addChild(pickup.container);
+            }
+
+            // Layer 3: Lighting
             const lighting = new LightingSystem(app);
 
-            // Layer 3: Entities container (mobs + player) - rendered BEFORE lighting
+            // Layer 4: Entities
             const entitiesContainer = new Container();
 
-            // Create player at spawn
             const spawnPos = world.getSpawnPosition();
             const player = new Player(spawnPos.x, spawnPos.y);
 
-            // Create mobs
-            const mobs: Mob[] = [];
-            for (let i = 0; i < GAME_CONFIG.MOB_COUNT; i++) {
+            let mobs: Mob[] = [];
+            const respawnMob = () => {
                 const mobPos = world.getRandomSpawnPosition();
                 const mob = new Mob(mobPos.x, mobPos.y);
                 mobs.push(mob);
                 entitiesContainer.addChild(mob.container);
+            };
+
+            for (let i = 0; i < GAME_CONFIG.MOB_COUNT; i++) {
+                respawnMob();
             }
 
-            // Add player to entities
             entitiesContainer.addChild(player.container);
-
-            // Add entities BEFORE lighting so they're visible
             gameContainer.addChild(entitiesContainer);
-
-            // Add lighting AFTER entities (fog covers everything, lights cut through)
             gameContainer.addChild(lighting.getContainer());
 
-            // Layer 4: Top overlay for walls (so they appear solid above fog)
+            // Layer 5: Walls overlay
             const wallsOverlay = new Container();
             for (const wall of world.walls) {
                 const wallGraphic = new Graphics();
                 wallGraphic.rect(wall.x, wall.y, wall.width, wall.height);
-                wallGraphic.fill({ color: GAME_CONFIG.WALL_COLOR });
-
-                // Highlights
-                wallGraphic.rect(wall.x, wall.y, wall.width, 3);
-                wallGraphic.fill({ color: 0x777777 });
-                wallGraphic.rect(wall.x, wall.y, 3, wall.height);
-                wallGraphic.fill({ color: 0x666666 });
-
-                // Shadows
-                wallGraphic.rect(wall.x, wall.y + wall.height - 3, wall.width, 3);
-                wallGraphic.fill({ color: 0x333333 });
-                wallGraphic.rect(wall.x + wall.width - 3, wall.y, 3, wall.height);
-                wallGraphic.fill({ color: 0x444444 });
-
+                wallGraphic.fill({ color: 0x000000 });
+                wallGraphic.stroke({ color: 0x333333, width: 1 });
                 wallsOverlay.addChild(wallGraphic);
             }
             gameContainer.addChild(wallsOverlay);
 
-            // Layer 5: Entities overlay on top of fog (so player/mobs are visible)
-            const entitiesOverlay = new Container();
-
-            // Clone player graphics for overlay
-            const playerOverlay = new Graphics();
-            playerOverlay.circle(0, 0, player.radius);
-            playerOverlay.fill({ color: GAME_CONFIG.PLAYER_COLOR });
-            playerOverlay.circle(player.radius * 0.5, 0, 5);
-            playerOverlay.fill({ color: 0xffffff });
-
-            entitiesOverlay.addChild(playerOverlay);
-
-            // Create mob overlays
-            const mobOverlays: Graphics[] = [];
-            for (const mob of mobs) {
-                const mobOverlay = new Graphics();
-                // Body
-                mobOverlay.circle(0, 0, mob.radius);
-                mobOverlay.fill({ color: GAME_CONFIG.MOB_COLOR });
-                mobOverlay.circle(0, 0, mob.radius);
-                mobOverlay.stroke({ color: 0x8b0000, width: 2 });
-                // Eyes
-                mobOverlay.circle(-6, -3, 5);
-                mobOverlay.circle(6, -3, 5);
-                mobOverlay.fill({ color: 0xffffff });
-                mobOverlay.circle(-5, -2, 2.5);
-                mobOverlay.circle(7, -2, 2.5);
-                mobOverlay.fill({ color: 0x660000 });
-
-                mobOverlays.push(mobOverlay);
-                entitiesOverlay.addChild(mobOverlay);
-            }
-
-            gameContainer.addChild(entitiesOverlay);
-
-            // Add to stage
             app.stage.addChild(gameContainer);
 
-            // Mouse tracking
+            // Input
             let mouseX = window.innerWidth / 2;
             let mouseY = window.innerHeight / 2;
+            let isMouseDown = false;
 
             const onMouseMove = (e: MouseEvent) => {
                 mouseX = e.clientX;
                 mouseY = e.clientY;
             };
-            window.addEventListener('mousemove', onMouseMove);
+            const onMouseDown = () => isMouseDown = true;
+            const onMouseUp = () => isMouseDown = false;
 
-            // Get wall data for collisions
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mousedown', onMouseDown);
+            window.addEventListener('mouseup', onMouseUp);
+
             const wallDatas = world.getWallDatas();
 
-            // FPS counter
+            let lastShotTime = 0;
+            const fireRate = 120;
+            let lastFootstepTime = 0;
+            const footstepInterval = 300;
+
             let frameCount = 0;
             let lastFpsUpdate = performance.now();
 
@@ -162,7 +144,6 @@ export default function Game() {
                 const deltaTime = ticker.deltaTime;
                 const deltaMs = ticker.deltaMS;
 
-                // FPS calculation
                 frameCount++;
                 const now = performance.now();
                 if (now - lastFpsUpdate >= 1000) {
@@ -171,8 +152,81 @@ export default function Game() {
                     lastFpsUpdate = now;
                 }
 
-                // Update player
+                // Player update
+                const wasMoving = length(player.velocity) > 0.1;
                 player.update(deltaTime);
+
+                // Footstep sounds
+                if (wasMoving && now - lastFootstepTime > footstepInterval) {
+                    soundManager.playFootstep();
+                    lastFootstepTime = now;
+                }
+
+                // Shooting
+                const shouldShoot = isMouseDown || (window as any).isAutoFire;
+
+                if (shouldShoot && now - lastShotTime > fireRate) {
+                    const bulletStart = add(player.position, mul(vec2(Math.cos(player.flashlightAngle), Math.sin(player.flashlightAngle)), 20));
+                    fxManager.spawnBullet(bulletStart.x, bulletStart.y, player.flashlightAngle);
+                    fxManager.createMuzzleFlash(bulletStart.x, bulletStart.y, player.flashlightAngle);
+                    fxManager.spawnShell(player.position.x, player.position.y, player.flashlightAngle);
+                    soundManager.playGunshot();
+                    lastShotTime = now;
+                }
+
+                fxManager.update(deltaTime, deltaMs);
+
+                // Bullet collisions
+                for (let i = fxManager.bullets.length - 1; i >= 0; i--) {
+                    const bullet = fxManager.bullets[i];
+
+                    // Wall hit
+                    let hitWall = false;
+                    for (const wall of wallDatas) {
+                        if (bullet.position.x >= wall.x && bullet.position.x <= wall.x + wall.width &&
+                            bullet.position.y >= wall.y && bullet.position.y <= wall.y + wall.height) {
+                            hitWall = true;
+                            break;
+                        }
+                    }
+
+                    if (hitWall) {
+                        bullet.active = false;
+                        continue;
+                    }
+
+                    // Mob hit
+                    for (let j = mobs.length - 1; j >= 0; j--) {
+                        const mob = mobs[j];
+                        if (!mob.alive) continue;
+
+                        const dist = length(sub(bullet.position, mob.position));
+                        if (dist < mob.radius + bullet.radius) {
+                            bullet.active = false;
+                            soundManager.playMobHit();
+
+                            const result = mob.takeDamage();
+
+                            // Create blood splatter on ground
+                            fxManager.createBloodSplatter(result.bloodPos.x, result.bloodPos.y);
+
+                            if (result.died) {
+                                // Spawn corpse
+                                fxManager.spawnCorpse(mob.container, mob.position.x, mob.position.y);
+
+                                mob.container.destroy();
+                                mobs.splice(j, 1);
+
+                                // Respawn
+                                const newPos = world.getRandomSpawnPosition();
+                                const newMob = new Mob(newPos.x, newPos.y);
+                                mobs.push(newMob);
+                                entitiesContainer.addChild(newMob.container);
+                            }
+                            break;
+                        }
+                    }
+                }
 
                 // Player-wall collisions
                 for (const wallData of wallDatas) {
@@ -183,12 +237,27 @@ export default function Game() {
                     }
                 }
 
+                // Flashlight pickup collision
+                for (let i = flashlightPickups.length - 1; i >= 0; i--) {
+                    const pickup = flashlightPickups[i];
+                    if (pickup.collected) continue;
+
+                    pickup.update(deltaMs);
+
+                    const dist = length(sub(player.position, pickup.position));
+                    if (dist < player.radius + pickup.radius) {
+                        pickup.collected = true;
+                        pickup.container.visible = false;
+                        player.equipFlashlight(pickup.stats.tier);
+                        setCurrentFlashlight(pickup.stats.name);
+                    }
+                }
+
                 // Update mobs
                 for (let i = 0; i < mobs.length; i++) {
                     const mob = mobs[i];
                     mob.update(deltaTime, deltaMs);
 
-                    // Mob-wall collisions
                     for (const wallData of wallDatas) {
                         const push = circleRectCollision(mob, wallData);
                         if (push) {
@@ -197,56 +266,21 @@ export default function Game() {
                             mob.reverseDirection();
                         }
                     }
-
-                    // Player-mob collision
-                    const playerMobCollision = circleCircleCollision(player, mob);
-                    if (playerMobCollision) {
-                        player.position = add(player.position, playerMobCollision.push1);
-                        mob.position = add(mob.position, playerMobCollision.push2);
-                        player.updatePosition();
-                        mob.updatePosition();
-                    }
-
-                    // Update mob overlay position
-                    if (mobOverlays[i]) {
-                        mobOverlays[i].x = mob.position.x;
-                        mobOverlays[i].y = mob.position.y;
-                    }
                 }
 
-                // Mob-mob collisions
-                for (let i = 0; i < mobs.length; i++) {
-                    for (let j = i + 1; j < mobs.length; j++) {
-                        const collision = circleCircleCollision(mobs[i], mobs[j]);
-                        if (collision) {
-                            mobs[i].position = add(mobs[i].position, collision.push1);
-                            mobs[j].position = add(mobs[j].position, collision.push2);
-                            mobs[i].updatePosition();
-                            mobs[j].updatePosition();
-                        }
-                    }
-                }
-
-                // Camera follows player (player stays centered)
+                // Camera
                 const screenCenterX = app.screen.width / 2;
                 const screenCenterY = app.screen.height / 2;
 
                 gameContainer.x = screenCenterX - player.position.x;
                 gameContainer.y = screenCenterY - player.position.y;
 
-                // Calculate world mouse position
                 const worldMouseX = mouseX - gameContainer.x;
                 const worldMouseY = mouseY - gameContainer.y;
 
-                // Update player flashlight direction
                 player.updateMousePosition(worldMouseX, worldMouseY);
 
-                // Update player overlay
-                playerOverlay.x = player.position.x;
-                playerOverlay.y = player.position.y;
-                playerOverlay.rotation = player.flashlightAngle;
-
-                // Update lighting
+                // Lighting
                 const mobCircles = mobs.map(m => ({
                     position: m.position,
                     radius: m.radius,
@@ -255,6 +289,7 @@ export default function Game() {
                 lighting.update(
                     player.position,
                     player.flashlightAngle,
+                    player.equippedFlashlight, // Pass dynamic stats
                     wallDatas,
                     mobCircles,
                     world.lamps,
@@ -267,9 +302,10 @@ export default function Game() {
 
             setIsLoading(false);
 
-            // Cleanup function
             return () => {
                 window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mousedown', onMouseDown);
+                window.removeEventListener('mouseup', onMouseUp);
                 player.destroy();
                 lighting.destroy();
                 app.destroy(true);
@@ -283,6 +319,10 @@ export default function Game() {
             cleanup.then(fn => fn?.());
         };
     }, []);
+
+    useEffect(() => {
+        (window as any).isAutoFire = autoFire;
+    }, [autoFire]);
 
     return (
         <div className="relative w-full h-screen overflow-hidden bg-black">
@@ -303,16 +343,28 @@ export default function Game() {
             </div>
 
             {/* HUD */}
-            <div className="absolute top-4 left-4 flex flex-col gap-2 text-white font-mono text-sm">
+            <div className="absolute top-4 left-4 flex flex-col gap-2 text-white font-mono text-sm pointer-events-none">
                 <div className="bg-black/50 px-3 py-1 rounded">
                     FPS: {fps}
                 </div>
                 <div className="bg-black/50 px-3 py-1 rounded">
-                    WASD - Move
+                    🔦 {currentFlashlight}
                 </div>
-                <div className="bg-black/50 px-3 py-1 rounded">
-                    Mouse - Aim flashlight
+                <div className="bg-black/50 px-3 py-1 rounded text-xs">
+                    WASD Move | LMB Shoot | Pick up flashlights!
                 </div>
+            </div>
+
+            {/* Controls */}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4">
+                <button
+                    onClick={() => setAutoFire(!autoFire)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded font-bold transition-all ${autoFire ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'bg-gray-800 text-gray-400'
+                        }`}
+                >
+                    <Zap className="w-5 h-5" />
+                    AUTO-FIRE: {autoFire ? 'ON' : 'OFF'}
+                </button>
             </div>
         </div>
     );

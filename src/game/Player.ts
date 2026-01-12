@@ -1,93 +1,97 @@
-import { Container, Graphics } from 'pixi.js';
-import { Vec2, vec2, normalize, mul, add, angleBetween } from './utils/math';
+import { Container } from 'pixi.js';
+import { Vec2, vec2, normalize, add, mul } from './utils/math';
 import { GAME_CONFIG } from './config';
+import { FlashlightStats, FLASHLIGHT_TIERS, FlashlightTier } from './items/Flashlight';
 
 export class Player {
-    public container: Container;
-    public graphics: Graphics;
     public position: Vec2;
     public velocity: Vec2;
-    public radius: number;
+    public radius: number = GAME_CONFIG.PLAYER_RADIUS;
+    public baseSpeed: number = GAME_CONFIG.PLAYER_SPEED;
+    public container: Container;
+
     public flashlightAngle: number = 0;
+    public equippedFlashlight: FlashlightStats;
 
     private keys: Set<string> = new Set();
 
     constructor(x: number, y: number) {
         this.position = vec2(x, y);
         this.velocity = vec2(0, 0);
-        this.radius = GAME_CONFIG.PLAYER_RADIUS;
-
         this.container = new Container();
-        this.graphics = new Graphics();
 
-        this.draw();
-        this.container.addChild(this.graphics);
+        // Default loadout
+        this.equippedFlashlight = FLASHLIGHT_TIERS[FlashlightTier.COMMON];
+
+        // Setup input listeners
+        if (typeof window !== 'undefined') {
+            window.addEventListener('keydown', (e) => this.keys.add(e.code));
+            window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+        }
+
         this.updatePosition();
-
-        this.setupInput();
     }
 
-    private draw(): void {
-        this.graphics.clear();
+    update(delta: number) {
+        // Reset velocity
+        let moveDir = vec2(0, 0);
 
-        // Body
-        this.graphics.circle(0, 0, this.radius);
-        this.graphics.fill({ color: GAME_CONFIG.PLAYER_COLOR });
+        // WASD movement
+        if (this.keys.has('KeyW')) moveDir.y -= 1;
+        if (this.keys.has('KeyS')) moveDir.y += 1;
+        if (this.keys.has('KeyA')) moveDir.x -= 1;
+        if (this.keys.has('KeyD')) moveDir.x += 1;
 
-        // Direction indicator
-        this.graphics.circle(this.radius * 0.5, 0, 5);
-        this.graphics.fill({ color: 0xffffff });
-    }
+        // Normalize and scale
+        if (moveDir.x !== 0 || moveDir.y !== 0) {
+            moveDir = normalize(moveDir);
 
-    private setupInput(): void {
-        if (typeof window === 'undefined') return;
+            // Tactical movement speed modifier
+            // Calculate dot product between movement direction and aim direction
+            const aimDir = vec2(Math.cos(this.flashlightAngle), Math.sin(this.flashlightAngle));
+            const dot = moveDir.x * aimDir.x + moveDir.y * aimDir.y;
 
-        window.addEventListener('keydown', (e) => {
-            this.keys.add(e.key.toLowerCase());
-        });
+            // Formula: Forward (+1) -> 1.0, Side (0) -> 0.7, Back (-1) -> 0.4
+            // Range map: [-1, 1] -> [0.4, 1.0]
+            // Scale: 1 unit of dot = 0.3 speed diff?
+            // dot=1 -> 0.7 + 0.3 = 1.0
+            // dot=0 -> 0.7
+            // dot=-1 -> 0.7 - 0.3 = 0.4
+            const speedModifier = 0.7 + 0.3 * dot;
 
-        window.addEventListener('keyup', (e) => {
-            this.keys.delete(e.key.toLowerCase());
-        });
-    }
+            const currentSpeed = this.baseSpeed * speedModifier;
 
-    public updateMousePosition(worldMouseX: number, worldMouseY: number): void {
-        this.flashlightAngle = angleBetween(this.position, vec2(worldMouseX, worldMouseY));
-        this.graphics.rotation = this.flashlightAngle;
-    }
-
-    public update(deltaTime: number): void {
-        let dx = 0;
-        let dy = 0;
-
-        if (this.keys.has('w') || this.keys.has('ц')) dy -= 1;
-        if (this.keys.has('s') || this.keys.has('ы')) dy += 1;
-        if (this.keys.has('a') || this.keys.has('ф')) dx -= 1;
-        if (this.keys.has('d') || this.keys.has('в')) dx += 1;
-
-        if (dx !== 0 || dy !== 0) {
-            const dir = normalize(vec2(dx, dy));
-            const speed = GAME_CONFIG.PLAYER_SPEED * deltaTime;
-            this.velocity = mul(dir, speed);
+            this.velocity = mul(moveDir, currentSpeed * delta);
             this.position = add(this.position, this.velocity);
+
+            // Keep in world bounds
+            const margin = this.radius + 10;
+            this.position.x = Math.max(margin, Math.min(GAME_CONFIG.WORLD_WIDTH - margin, this.position.x));
+            this.position.y = Math.max(margin, Math.min(GAME_CONFIG.WORLD_HEIGHT - margin, this.position.y));
+
+            this.updatePosition();
         } else {
             this.velocity = vec2(0, 0);
         }
-
-        // Keep in world bounds
-        const margin = this.radius + 10;
-        this.position.x = Math.max(margin, Math.min(GAME_CONFIG.WORLD_WIDTH - margin, this.position.x));
-        this.position.y = Math.max(margin, Math.min(GAME_CONFIG.WORLD_HEIGHT - margin, this.position.y));
-
-        this.updatePosition();
     }
 
-    public updatePosition(): void {
+    updateMousePosition(mouseX: number, mouseY: number) {
+        this.flashlightAngle = Math.atan2(
+            mouseY - this.position.y,
+            mouseX - this.position.x
+        );
+    }
+
+    updatePosition() {
         this.container.x = this.position.x;
         this.container.y = this.position.y;
     }
 
-    public destroy(): void {
-        // Clean up event listeners if needed
+    destroy() {
+        // Cleanup listeners could go here
+    }
+
+    equipFlashlight(tier: FlashlightTier) {
+        this.equippedFlashlight = FLASHLIGHT_TIERS[tier];
     }
 }
