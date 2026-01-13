@@ -7,6 +7,36 @@ type PlayerShootCallback = (playerId: string, x: number, y: number, angle: numbe
 type MobHitCallback = (mobId: string, x: number, y: number) => void;
 type MobDeathCallback = (mobId: string, x: number, y: number) => void;
 
+/**
+ * Determines the WebSocket server URL based on the current environment.
+ * - For local development (localhost): connects to localhost:3001
+ * - For proxied connections (ngrok, etc.): uses NEXT_PUBLIC_WS_URL env variable
+ *   or falls back to the same origin (requires server proxy setup)
+ */
+function getServerUrl(): string {
+    // Check if running in browser
+    if (typeof window === 'undefined') {
+        return 'http://localhost:3001';
+    }
+
+    const hostname = window.location.hostname;
+
+    // Local development
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:3001';
+    }
+
+    // For proxied connections (ngrok, etc.):
+    // Option 1: Use environment variable for explicit WebSocket server URL
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    if (wsUrl) {
+        return wsUrl;
+    }
+
+    // Option 2: Use same origin with /api/socket path (requires Next.js proxy)
+    // This is a fallback - the server needs to be proxied through Next.js
+    return window.location.origin;
+}
 
 export class NetworkManager {
     private socket: Socket | null = null;
@@ -18,7 +48,9 @@ export class NetworkManager {
     private connected: boolean = false;
     private connectCallbacks: (() => void)[] = [];
 
-    constructor(private serverUrl: string = 'http://localhost:3001') { }
+    constructor(private serverUrl: string = getServerUrl()) {
+        console.log('[NetworkManager] Using server URL:', this.serverUrl);
+    }
 
     connect(): void {
         if (this.socket) return;

@@ -95,3 +95,43 @@ import Game from '@/components/GameMultiplayer';
 - [ ] Add player names and scoreboard
 - [ ] Add chat system
 - [ ] Deploy to production
+
+## Telegram Mini App Deployment (ngrok)
+
+When deploying as a Telegram Mini App through ngrok, you need **two tunnels**:
+
+### 1. Start ngrok tunnels
+
+Open two terminal windows:
+
+```bash
+# Terminal 1: Client tunnel (Next.js)
+ngrok http 3000
+
+# Terminal 2: Server tunnel (WebSocket)
+ngrok http 3001
+```
+
+### 2. Configure WebSocket URL
+
+Create `client/.env.local` with the **server** tunnel URL:
+
+```env
+NEXT_PUBLIC_WS_URL=https://YOUR-SERVER-TUNNEL.ngrok-free.app
+```
+
+### 3. Restart the client
+
+```bash
+npm run dev:client
+```
+
+### 4. Use in Telegram
+
+Use the **client** tunnel URL (`https://YOUR-CLIENT-TUNNEL.ngrok-free.app`) as your Telegram Mini App URL.
+
+### Why Two Tunnels?
+
+- The **client tunnel** serves the web app (port 3000)
+- The **server tunnel** handles WebSocket connections (port 3001)
+- Remote clients can't access `localhost:3001` - they need a public URL
