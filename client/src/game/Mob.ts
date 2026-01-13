@@ -1,6 +1,8 @@
 import { Container, Graphics } from 'pixi.js';
 import { Vec2, vec2, normalize, mul, add, random, sub, length } from './utils/math';
 import { GAME_CONFIG } from './config';
+import { MobSprite } from './mob/MobSprite';
+import { MobAnimation } from './mob/MobAnimationConfig';
 
 export class Mob {
     public container: Container;
@@ -11,7 +13,7 @@ export class Mob {
     public alive: boolean = true;
     public target: Vec2 | null = null; // Aggro target
 
-    private bodyGraphics: Graphics;
+    private sprite: MobSprite;
     private shadowGraphics: Graphics;
     private directionTimer: number = 0;
     private targetDirection: Vec2;
@@ -30,44 +32,22 @@ export class Mob {
         this.shadowGraphics = new Graphics();
         this.shadowGraphics.ellipse(0, 0, this.radius * 0.85, this.radius * 0.4);
         this.shadowGraphics.fill({ color: 0x000000, alpha: 0.35 });
-        this.shadowGraphics.y = this.radius * 0.6;
+        // The user requested shadow below sprites. 
+        // In Pixi, order of addition determines z-index (painters algo).
+        // Adding shadow first puts it at the bottom.
+        // We also move it slightly down to look like it's under the feet.
+        this.shadowGraphics.y = this.radius + 5;
 
-        // Create body
-        this.bodyGraphics = new Graphics();
-        this.drawBody();
+        // Create animated sprite
+        this.sprite = new MobSprite();
+
+        // Start loading
+        this.sprite.preload();
 
         this.container.addChild(this.shadowGraphics);
-        this.container.addChild(this.bodyGraphics);
+        this.container.addChild(this.sprite);
 
         this.updatePosition();
-    }
-
-    private drawBody(): void {
-        const g = this.bodyGraphics;
-        g.clear();
-
-        // Body - main circle
-        g.circle(0, 0, this.radius);
-        g.fill({ color: GAME_CONFIG.MOB_COLOR });
-
-        // Body outline
-        g.circle(0, 0, this.radius);
-        g.stroke({ color: 0x8b0000, width: 2 });
-
-        // Inner body highlight
-        g.circle(-4, -4, this.radius * 0.6);
-        g.fill({ color: 0xff6666, alpha: 0.3 });
-
-        // Face details
-        g.moveTo(-10, -10); g.lineTo(-3, -7); g.stroke({ color: 0x000000, width: 2 });
-        g.moveTo(10, -10); g.lineTo(3, -7); g.stroke({ color: 0x000000, width: 2 });
-        g.circle(-6, -3, 5); g.circle(6, -3, 5); g.fill({ color: 0xffffff });
-        g.circle(-6, -3, 5); g.circle(6, -3, 5); g.stroke({ color: 0x333333, width: 1 });
-        g.circle(-5, -2, 2.5); g.circle(7, -2, 2.5); g.fill({ color: 0x660000 });
-        g.circle(-6, -3, 1); g.circle(6, -3, 1); g.fill({ color: 0xffffff });
-        g.moveTo(-6, 6); g.quadraticCurveTo(0, 3, 6, 6); g.stroke({ color: 0x000000, width: 2 });
-        g.moveTo(-4, 6); g.lineTo(-3, 9); g.lineTo(-2, 6); g.fill({ color: 0xffffff });
-        g.moveTo(2, 6); g.lineTo(3, 9); g.lineTo(4, 6); g.fill({ color: 0xffffff });
     }
 
     private randomDirection(): Vec2 {
@@ -130,6 +110,21 @@ export class Mob {
 
         this.moveAngle += adjustedDiff * 0.1;
 
+        // Update sprite rotation
+        this.sprite.setRotation(this.moveAngle);
+
+        // Update animations
+        // Simple logic: if moving, play move.
+        // (For now, mobs always move roughly, so maybe always move? 
+        // Or check speed. `speed` is constant here unless we stop them.)
+
+        // If we wanted them to stop near target:
+        // if (dist < 10) velocity = 0... 
+        // But currently they just push.
+
+        this.sprite.play(MobAnimation.MOVE);
+        this.sprite.update(deltaMs);
+
         // Keep in world bounds
         const margin = this.radius + 50;
         this.position.x = Math.max(margin, Math.min(GAME_CONFIG.WORLD_WIDTH - margin, this.position.x));
@@ -149,3 +144,4 @@ export class Mob {
         }
     }
 }
+
