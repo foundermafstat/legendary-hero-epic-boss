@@ -513,7 +513,16 @@ export default function GameMultiplayer() {
                     }
                 }
 
-                soundManager.playSound('shoot', { volume: 0.4 });
+                let soundName = 'shoot';
+                if (id === myId) {
+                    const w = currentWeaponRef.current;
+                    if (w === WeaponType.HANDGUN) soundName = 'shoot_handgun';
+                    else if (w === WeaponType.SHOTGUN) soundName = 'shoot_shotgun';
+                    else if (w === WeaponType.RIFLE) soundName = 'shoot_rifle';
+                } else {
+                    soundName = 'shoot_rifle';
+                }
+                soundManager.playSound(soundName, { volume: 0.4 });
                 // Add to playersContainer to appear above lighting/shadows
                 fxManager.createMuzzleFlash(x, y, angle, playersContainer);
                 fxManager.spawnShell(x, y, angle);
@@ -611,6 +620,7 @@ export default function GameMultiplayer() {
                                 localPlayerSpriteRef.current.playMeleeAttack();
                                 lastMeleeTimeRef.current = now;
                                 autoMeleeTriggered = true;
+                                soundManager.playSound('melee_swing', { volume: 0.5 });
                             }
                         }
                     }
@@ -634,6 +644,11 @@ export default function GameMultiplayer() {
                             pos: vec2(lx, ly),
                             range: stats.range,
                             cone: { dir: p.flashlightAngle, angle: stats.angle }
+                        });
+                        // Ambient light from player (so mobs close to any player are visible)
+                        lightSources.push({
+                            pos: p.position,
+                            range: 60
                         });
                     }
 
@@ -842,7 +857,8 @@ export default function GameMultiplayer() {
                     </div>
 
                     {/* Debug/Cheat Controls */}
-                    <div className="absolute bottom-4 right-4 flex flex-col gap-2 pointer-events-auto">
+                    {/* Moved above joystick (approx bottom-48) */}
+                    <div className="absolute bottom-48 right-4 flex flex-col gap-2 pointer-events-auto">
                         <button
                             onClick={toggleAutoFire}
                             className={`px-3 py-1 rounded text-sm font-bold text-white transition-colors ${autoFire ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600'

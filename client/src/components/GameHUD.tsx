@@ -205,33 +205,7 @@ const styles: Record<string, React.CSSProperties> = {
         color: 'rgba(255, 255, 255, 0.8)',
         textTransform: 'uppercase',
     },
-    // Ammo display styles
-    ammoContainer: {
-        position: 'absolute',
-        bottom: 20,
-        right: 20,
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 4,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        padding: '10px 20px',
-        borderRadius: 8,
-        border: '2px solid rgba(255, 255, 255, 0.2)',
-    },
-    ammoCount: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#ffffff',
-        textShadow: '0 0 10px rgba(255, 255, 255, 0.5)',
-    },
-    ammoSeparator: {
-        fontSize: 24,
-        color: 'rgba(255, 255, 255, 0.5)',
-    },
-    ammoMax: {
-        fontSize: 18,
-        color: 'rgba(255, 255, 255, 0.5)',
-    },
+
     reloadingText: {
         fontSize: 16,
         fontWeight: 'bold',
