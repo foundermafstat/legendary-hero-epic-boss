@@ -5,11 +5,11 @@ export const GAME_CONFIG = {
     WORLD_HEIGHT: 3000,
 
     // Player settings
-    PLAYER_RADIUS: 20,
+    PLAYER_RADIUS: 22, // Increased from 20
     PLAYER_HP: 100,
 
     // Mob settings  
-    MOB_RADIUS: 18,
+    MOB_RADIUS: 20, // Increased from 18
 
     // Bullet settings
     BULLET_RADIUS: 3,

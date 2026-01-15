@@ -501,7 +501,18 @@ export default function GameMultiplayer() {
             });
 
             // Network Events
+            // Network Events
             network.onPlayerShoot((id, x, y, angle) => {
+                const myId = network.getPlayerId();
+                if (id === myId) {
+                    // Check if we are doing a melee attack (or other non-shooting action)
+                    if (localPlayerSpriteRef.current?.isPlayingOneShot) {
+                        // Melee attack: No flash, no shell, no shoot sound
+                        // Maybe play swipe sound here if not played elsewhere?
+                        return;
+                    }
+                }
+
                 soundManager.playSound('shoot', { volume: 0.4 });
                 // Add to playersContainer to appear above lighting/shadows
                 fxManager.createMuzzleFlash(x, y, angle, playersContainer);
@@ -560,6 +571,9 @@ export default function GameMultiplayer() {
                 // Determine logic update
                 if (!gameStartedRef.current) return;
 
+                let autoMeleeTriggered = false;
+
+
                 const deltaMs = ticker.deltaMS;
                 const delta = ticker.deltaTime;
 
@@ -586,17 +600,18 @@ export default function GameMultiplayer() {
                         for (const mob of lastState.mobs) {
                             if (!mob.alive) continue;
                             const d = length(sub(me.position, mob.position));
-                            if (d < (GAME_CONFIG.MOB_RADIUS + GAME_CONFIG.PLAYER_RADIUS + 10)) {
+                            if (d < (GAME_CONFIG.MOB_RADIUS + GAME_CONFIG.PLAYER_RADIUS + 30)) {
                                 enemyClose = true;
                                 break;
                             }
                         }
 
                         if (enemyClose) {
-                            localPlayerSpriteRef.current.playMeleeAttack();
-                            lastMeleeTimeRef.current = now;
-                            // Sound?
-                            // soundManager.playSound('swipe', {volume: 0.5});
+                            if (!localPlayerSpriteRef.current.isPlayingOneShot) {
+                                localPlayerSpriteRef.current.playMeleeAttack();
+                                lastMeleeTimeRef.current = now;
+                                autoMeleeTriggered = true;
+                            }
                         }
                     }
                 }
@@ -758,7 +773,7 @@ export default function GameMultiplayer() {
                 const input: PlayerInput = {
                     moveDir,
                     aimAngle,
-                    isShooting: canShoot,
+                    isShooting: canShoot || autoMeleeTriggered,
                 };
                 inputRef.current = input;
                 network.sendInput(input);
