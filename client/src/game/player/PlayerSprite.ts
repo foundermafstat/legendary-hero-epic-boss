@@ -1,4 +1,4 @@
-import { Container, Sprite, Texture, Assets } from 'pixi.js';
+import { Container, Sprite, Texture, Assets, Graphics } from 'pixi.js';
 import { Vec2, vec2, length, normalize } from '../utils/math';
 import {
     WeaponType,
@@ -30,6 +30,7 @@ export class PlayerSprite extends Container {
     // Sprite layers
     private feetSprite: Sprite;
     private bodySprite: Sprite;
+    private hpBar: Graphics;
 
     // Current state
     private currentWeapon: WeaponType = WeaponType.FLASHLIGHT;
@@ -50,7 +51,11 @@ export class PlayerSprite extends Container {
     private isMoving: boolean = false;
 
     // Scale for the sprites (adjust based on visual requirements)
-    private spriteScale: number = 0.35;
+    private spriteScale: number = 0.315;
+
+    get isPlayingOneShot(): boolean {
+        return this.bodyAnimState?.loop === false;
+    }
 
     constructor() {
         super();
@@ -58,6 +63,7 @@ export class PlayerSprite extends Container {
         // Create sprite placeholders
         this.feetSprite = new Sprite();
         this.bodySprite = new Sprite();
+        this.hpBar = new Graphics();
 
         // Set anchors for proper rotation
         // Feet: center rotation
@@ -77,12 +83,44 @@ export class PlayerSprite extends Container {
         // Feet layer is below body
         this.addChild(this.feetSprite);
         this.addChild(this.bodySprite);
+        this.addChild(this.hpBar);
+
+        // Initial HP Draw (full)
+        this.setHp(100, 100);
     }
+
+    public setHp(hp: number, maxHp: number) {
+        this.hpBar.clear();
+
+        // Hide HP bar if maxHp is 0 (local player uses HUD)
+        if (maxHp <= 0) {
+            this.hpBar.visible = false;
+            return;
+        }
+
+        this.hpBar.visible = true;
+
+        // Background
+        this.hpBar.rect(-20, -50, 40, 6);
+        this.hpBar.fill({ color: 0x333333 });
+
+        // Foreground
+        const pct = Math.max(0, hp / maxHp);
+        const width = 40 * pct;
+        const color = pct > 0.5 ? 0x00ff00 : (pct > 0.25 ? 0xffff00 : 0xff0000);
+
+        this.hpBar.rect(-20, -50, width, 6);
+        this.hpBar.fill({ color: color });
+    }
+
 
     /**
      * Preload all textures for a given weapon
      */
     async preloadTextures(weapon: WeaponType = WeaponType.FLASHLIGHT): Promise<void> {
+        // Set the current weapon first
+        this.currentWeapon = weapon;
+
         // Preload body animations
         for (const anim of Object.values(BodyAnimation)) {
             const frameCount = BODY_FRAME_COUNTS[weapon][anim];
@@ -100,7 +138,7 @@ export class PlayerSprite extends Container {
             this.feetTextures.set(anim, textures);
         }
 
-        // Set initial animation
+        // Set initial animation with the loaded weapon
         this.setBodyAnimation(BodyAnimation.IDLE);
         this.setFeetAnimation(FeetAnimation.IDLE);
     }
@@ -213,12 +251,64 @@ export class PlayerSprite extends Container {
     }
 
     /**
+     * Play shoot animation (one-shot)
+     */
+    playShoot(): void {
+        if (!this.bodyAnimState) return;
+        // Only play if not already shooting/reloading/meleeing
+        if (this.bodyAnimState.loop === false) return;
+
+        const frameCount = BODY_FRAME_COUNTS[this.currentWeapon][BodyAnimation.SHOOT];
+        if (frameCount > 0) {
+            this.setBodyAnimation(BodyAnimation.SHOOT);
+            this.bodyAnimState.loop = false;
+            // Return to move/idle after shoot animation completes
+        }
+    }
+
+    /**
+     * Play reload animation (one-shot)
+     */
+    playReload(): void {
+        if (!this.bodyAnimState) return;
+        if (this.bodyAnimState.loop === false) return;
+
+        const frameCount = BODY_FRAME_COUNTS[this.currentWeapon][BodyAnimation.RELOAD];
+        if (frameCount > 0) {
+            this.setBodyAnimation(BodyAnimation.RELOAD);
+            this.bodyAnimState.loop = false;
+        }
+    }
+
+    /**
+     * Play melee attack animation (one-shot)
+     */
+    playMeleeAttack(): void {
+        if (!this.bodyAnimState) return;
+        if (this.bodyAnimState.loop === false) return;
+
+        const frameCount = BODY_FRAME_COUNTS[this.currentWeapon][BodyAnimation.MELEE_ATTACK];
+        if (frameCount > 0) {
+            this.setBodyAnimation(BodyAnimation.MELEE_ATTACK);
+            this.bodyAnimState.loop = false;
+        }
+    }
+
+    /**
      * Update movement direction and select appropriate animations
+     * Only updates if not playing a one-shot animation
      */
     setMoveDirection(moveDir: Vec2): void {
         this.moveDir = moveDir;
         const speed = length(moveDir);
         this.isMoving = speed > MOVEMENT_THRESHOLDS.IDLE;
+
+        // Don't override one-shot animations (shoot, reload, melee)
+        if (this.bodyAnimState && !this.bodyAnimState.loop) {
+            // Still update feet though
+            this.updateFeetAnimation(speed);
+            return;
+        }
 
         // Update body animation
         if (this.isMoving) {
@@ -231,6 +321,13 @@ export class PlayerSprite extends Container {
             }
         }
 
+        this.updateFeetAnimation(speed);
+    }
+
+    /**
+     * Update feet animation based on movement
+     */
+    private updateFeetAnimation(speed: number): void {
         // Update feet animation based on movement relative to aim
         if (!this.isMoving) {
             this.setFeetAnimation(FeetAnimation.IDLE);
@@ -239,7 +336,7 @@ export class PlayerSprite extends Container {
 
         // Calculate movement type based on aim direction
         const aimDir = vec2(Math.cos(this.aimAngle), Math.sin(this.aimAngle));
-        const normalizedMove = normalize(moveDir);
+        const normalizedMove = normalize(this.moveDir);
 
         // Dot product: forward/backward detection
         const dot = normalizedMove.x * aimDir.x + normalizedMove.y * aimDir.y;
@@ -288,7 +385,15 @@ export class PlayerSprite extends Container {
                     if (this.bodyAnimState.loop) {
                         this.bodyAnimState.currentFrame = 0;
                     } else {
+                        // One-shot animation completed, return to idle/move
                         this.bodyAnimState.currentFrame = this.bodyAnimState.frames.length - 1;
+                        this.bodyAnimState.loop = true; // Reset loop flag
+                        // Return to appropriate animation
+                        if (this.isMoving) {
+                            this.setBodyAnimation(BodyAnimation.MOVE);
+                        } else {
+                            this.setBodyAnimation(BodyAnimation.IDLE);
+                        }
                     }
                 }
 

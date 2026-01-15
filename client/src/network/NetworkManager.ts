@@ -6,6 +6,7 @@ type WorldDataCallback = (data: WorldData) => void;
 type PlayerShootCallback = (playerId: string, x: number, y: number, angle: number) => void;
 type MobHitCallback = (mobId: string, x: number, y: number) => void;
 type MobDeathCallback = (mobId: string, x: number, y: number) => void;
+type MobAttackCallback = (mobId: string, x: number, y: number) => void;
 
 /**
  * Determines the WebSocket server URL based on the current environment.
@@ -45,6 +46,7 @@ export class NetworkManager {
     private playerShootCallback: PlayerShootCallback | null = null;
     private mobHitCallback: MobHitCallback | null = null;
     private mobDeathCallback: MobDeathCallback | null = null;
+    private mobAttackCallback: MobAttackCallback | null = null;
     private connected: boolean = false;
     private connectCallbacks: (() => void)[] = [];
 
@@ -102,6 +104,10 @@ export class NetworkManager {
         this.socket.on('mobDeath', (mobId: string, x: number, y: number) => {
             if (this.mobDeathCallback) this.mobDeathCallback(mobId, x, y);
         });
+
+        this.socket.on('mobAttack', (mobId: string, x: number, y: number) => {
+            if (this.mobAttackCallback) this.mobAttackCallback(mobId, x, y);
+        });
     }
 
     disconnect(): void {
@@ -145,6 +151,10 @@ export class NetworkManager {
 
     onMobDeath(callback: MobDeathCallback): void {
         this.mobDeathCallback = callback;
+    }
+
+    onMobAttack(callback: MobAttackCallback): void {
+        this.mobAttackCallback = callback;
     }
 
     getPlayerId(): string | undefined {

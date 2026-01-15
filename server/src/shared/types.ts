@@ -57,4 +57,5 @@ export interface ServerToClientEvents {
     playerShoot: (playerId: string, x: number, y: number, angle: number) => void;
     mobHit: (mobId: string, x: number, y: number) => void;
     mobDeath: (mobId: string, x: number, y: number) => void;
+    mobAttack: (mobId: string, x: number, y: number) => void;
 }

@@ -53,9 +53,9 @@ export class FXManager {
 
     private generateBulletTexture(): Texture {
         const g = new Graphics();
-        // Rectangular 8x2 pixels (Horizontal) aligned with rotation 0
-        g.rect(-4, -1, 8, 2);
-        g.fill({ color: 0xFFFF00 });
+        // Smaller tracer - 12x2 pixels
+        g.rect(-6, -1, 12, 2);
+        g.fill({ color: 0xFFFF88 }); // Brighter yellow
         return this.app.renderer.generateTexture(g);
     }
 

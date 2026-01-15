@@ -80,11 +80,35 @@ export class GameManager {
 
         // Update mobs
         for (const mob of this.mobs) {
+            if (!mob.alive) continue;
+
+            // Aggro Logic: Check for nearby players if no target
+            if (!mob.targetId) {
+                for (const [pid, p] of this.players) {
+                    if (distance(mob.position, p.position) < 300) {
+                        mob.setAggro(p.position, pid);
+                        break;
+                    }
+                }
+            }
+
             // Update target position if chasing a player
             if (mob.targetId) {
                 const targetPlayer = this.players.get(mob.targetId);
                 if (targetPlayer) {
                     mob.target = targetPlayer.position;
+
+                    // Attack Logic
+                    const dist = distance(mob.position, targetPlayer.position);
+                    if (dist <= 40) {
+                        const damage = mob.attemptAttack(currentTime);
+                        if (damage > 0) {
+                            targetPlayer.takeDamage(damage);
+                            // Trigger attack event (for animation/sound)
+                            this.triggerEvent('mobAttack', mob.id, mob.position.x, mob.position.y);
+                        }
+                    }
+
                 } else {
                     // Player disconnected or gone
                     mob.targetId = null;

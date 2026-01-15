@@ -13,6 +13,7 @@ export class ServerMob {
 
     private directionTimer: number;
     private targetDirection: Vec2;
+    private lastAttackTime: number = 0;
 
     constructor(id: string, spawnPos: Vec2) {
         this.id = id;
@@ -24,6 +25,7 @@ export class ServerMob {
         this.targetId = null;
         this.directionTimer = 0;
         this.targetDirection = this.randomDirection();
+        this.lastAttackTime = 0;
     }
 
     private randomDirection(): Vec2 {
@@ -46,8 +48,15 @@ export class ServerMob {
             const diff = sub(this.target, this.position);
             const dist = length(diff);
 
-            if (dist > 10) {
+            // Stop moving if very close (attacking range)
+            if (dist > 35) {
                 this.targetDirection = normalize(diff);
+                // Move towards target direction
+                const speed = GAME_CONFIG.MOB_SPEED * deltaTime;
+                this.velocity = mul(this.targetDirection, speed);
+                this.position = add(this.position, this.velocity);
+            } else {
+                this.velocity = vec2(0, 0); // Stop to attack
             }
         } else {
             // Random movement logic
@@ -55,17 +64,27 @@ export class ServerMob {
                 this.directionTimer = 0;
                 this.targetDirection = this.randomDirection();
             }
+            // Move towards target direction
+            const speed = GAME_CONFIG.MOB_SPEED * deltaTime;
+            this.velocity = mul(this.targetDirection, speed);
+            this.position = add(this.position, this.velocity);
         }
-
-        // Move towards target direction
-        const speed = GAME_CONFIG.MOB_SPEED * deltaTime;
-        this.velocity = mul(this.targetDirection, speed);
-        this.position = add(this.position, this.velocity);
 
         // Keep in world bounds
         const margin = GAME_CONFIG.MOB_RADIUS + 50;
         this.position.x = Math.max(margin, Math.min(GAME_CONFIG.WORLD_WIDTH - margin, this.position.x));
         this.position.y = Math.max(margin, Math.min(GAME_CONFIG.WORLD_HEIGHT - margin, this.position.y));
+    }
+
+    attemptAttack(currentTime: number): number {
+        if (!this.alive) return 0;
+
+        if (currentTime - this.lastAttackTime >= 1000) {
+            this.lastAttackTime = currentTime;
+            // Damage 7 to 10
+            return Math.floor(random(7, 11));
+        }
+        return 0;
     }
 
     takeDamage(): boolean {

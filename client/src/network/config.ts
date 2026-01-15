@@ -6,6 +6,7 @@ export const GAME_CONFIG = {
 
     // Player settings
     PLAYER_RADIUS: 20,
+    PLAYER_HP: 100,
 
     // Mob settings  
     MOB_RADIUS: 18,

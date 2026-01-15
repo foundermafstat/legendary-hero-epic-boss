@@ -19,6 +19,10 @@ export class MobSprite extends Container {
     private animState: AnimationState | null = null;
     private textures: Map<MobAnimation, Texture[]> = new Map();
 
+    public get isPlayingOneShot(): boolean {
+        return !!this.onAnimationComplete;
+    }
+
     // Scale for visual size adjustment
     // Original assets might be large, adjusting to fit ~30-40px radius
     private spriteScale: number = 0.25;
